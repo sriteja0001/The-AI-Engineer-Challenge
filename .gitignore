@@ -164,3 +164,4 @@ cython_debug/
 #.idea/
 .vercel
 frontend/.next/
+frontend/node_modules/
