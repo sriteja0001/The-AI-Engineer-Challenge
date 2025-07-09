@@ -22,8 +22,8 @@ export default function Home() {
 
   // System prompts for each mode
   const systemPrompts: Record<Mode, string> = {
-    explaining: "You are a study assistant. Explain with clarity and thoroughness, as if teaching a student.",
-    quiz: "You are a study assistant. Generate 3 multiple-choice questions (with 4 options each, and mark the correct answer) about the following topic for a student quiz."
+    explaining: "You are a study assistant. Explain with clarity and thoroughness, as if teaching a student. Use straightforward language and format in bullet points.",
+    quiz: "You are a study assistant. Generate 3 multiple-choice questions (with 4 options each) about the following topic for a student quiz. Do not reveal the correct answer until the end of the message after all of the questions are asked."
   }
 
   // Handle PDF upload
