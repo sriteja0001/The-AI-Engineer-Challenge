@@ -1,6 +1,6 @@
 ---
-description: When designing a frontend or frontend components.
-globs: 
+description: 
+globs: *.tsx,*.ts,*.js
 alwaysApply: false
 ---
 ### Rules for Frontend

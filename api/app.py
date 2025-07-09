@@ -1,5 +1,5 @@
 # Import required FastAPI components for building the API
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form
 from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 # Import Pydantic for data validation and settings management
@@ -7,7 +7,11 @@ from pydantic import BaseModel
 # Import OpenAI client for interacting with OpenAI's API
 from openai import OpenAI
 import os
-from typing import Optional
+from typing import Optional, Dict
+import uuid
+from aimakerspace.text_utils import PDFLoader, CharacterTextSplitter
+from aimakerspace.openai_utils.embedding import EmbeddingModel
+from aimakerspace.vectordatabase import VectorDatabase
 
 # Initialize FastAPI application with a title
 app = FastAPI(title="OpenAI Chat API")
@@ -29,6 +33,15 @@ class ChatRequest(BaseModel):
     user_message: str      # Message from the user
     model: Optional[str] = "gpt-4.1-mini"  # Optional model selection with default
     api_key: str          # OpenAI API key for authentication
+
+# In-memory store for session vector DBs
+vector_db_store: Dict[str, VectorDatabase] = {}
+
+class PDFChatRequest(BaseModel):
+    session_id: str
+    user_message: str
+    api_key: str
+    model: Optional[str] = "gpt-4.1-mini"
 
 # Define the main chat endpoint that handles POST requests
 @app.post("/api/chat")
@@ -65,6 +78,40 @@ async def chat(request: ChatRequest):
 @app.get("/api/health")
 async def health_check():
     return {"status": "ok"}
+
+@app.post("/api/upload_pdf")
+async def upload_pdf(file: UploadFile = File(...), api_key: str = File(...)):
+    temp_path = f"/tmp/{uuid.uuid4()}.pdf"
+    with open(temp_path, "wb") as f:
+        f.write(await file.read())
+    loader = PDFLoader(temp_path)
+    documents = loader.load_documents()
+    splitter = CharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
+    chunks = splitter.split_texts(documents)
+    os.environ["OPENAI_API_KEY"] = api_key  # Patch: set API key for EmbeddingModel
+    embedding_model = EmbeddingModel()
+    vector_db = await VectorDatabase(embedding_model).abuild_from_list(chunks)
+    session_id = str(uuid.uuid4())
+    vector_db_store[session_id] = vector_db
+    os.remove(temp_path)
+    return {"session_id": session_id}
+
+@app.post("/api/chat_pdf")
+async def chat_pdf(request: PDFChatRequest):
+    vector_db = vector_db_store.get(request.session_id)
+    if not vector_db:
+        raise HTTPException(status_code=404, detail="Session not found")
+    relevant_chunks = vector_db.search_by_text(request.user_message, k=4, return_as_text=True)
+    context = "\n".join(relevant_chunks)
+    prompt = f"You are a helpful assistant. Use the following context from a PDF to answer the user's question.\n\nContext:\n{context}\n\nQuestion: {request.user_message}\nAnswer:"
+    client = OpenAI(api_key=request.api_key)
+    response = client.chat.completions.create(
+        model=request.model,
+        messages=[{"role": "system", "content": prompt}],
+        stream=False
+    )
+    answer = response.choices[0].message.content
+    return {"answer": answer}
 
 # Entry point for running the application directly
 if __name__ == "__main__":

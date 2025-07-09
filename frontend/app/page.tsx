@@ -1,260 +1,98 @@
 'use client'
 
-import React, { useState, useRef, useEffect } from 'react'
-import { Send, Bot, User, Settings, Key } from 'lucide-react'
-
-interface Message {
-  id: string
-  content: string
-  role: 'user' | 'assistant'
-  timestamp: Date
-}
+import React, { useState } from 'react'
 
 export default function Home() {
-  const [messages, setMessages] = useState<Message[]>([])
-  const [inputMessage, setInputMessage] = useState('')
-  const [developerMessage, setDeveloperMessage] = useState('You are a helpful AI assistant.')
   const [apiKey, setApiKey] = useState('')
-  const [isLoading, setIsLoading] = useState(false)
-  const [showSettings, setShowSettings] = useState(false)
-  const messagesEndRef = useRef<HTMLDivElement>(null)
+  const [sessionId, setSessionId] = useState<string | null>(null)
+  const [pdfUploading, setPdfUploading] = useState(false)
+  const [uploadError, setUploadError] = useState<string | null>(null)
+  const [question, setQuestion] = useState('')
+  const [answer, setAnswer] = useState<string | null>(null)
+  const [chatError, setChatError] = useState<string | null>(null)
 
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }
-
-  useEffect(() => {
-    scrollToBottom()
-  }, [messages])
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!inputMessage.trim() || !apiKey.trim()) return
-
-    const userMessage: Message = {
-      id: Date.now().toString(),
-      content: inputMessage,
-      role: 'user',
-      timestamp: new Date()
-    }
-
-    setMessages(prev => [...prev, userMessage])
-    setInputMessage('')
-    setIsLoading(true)
-
+  // Handle PDF upload
+  const handlePdfUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files || !apiKey) return
+    setPdfUploading(true)
+    setUploadError(null)
+    setSessionId(null)
+    setAnswer(null)
+    setChatError(null)
+    const formData = new FormData()
+    formData.append('file', e.target.files[0])
+    formData.append('api_key', apiKey)
     try {
-      const response = await fetch('/api/chat', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          developer_message: developerMessage,
-          user_message: inputMessage,
-          api_key: apiKey,
-          model: 'gpt-4.1-mini'
-        }),
-      })
-
-      if (!response.ok) {
-        throw new Error('Failed to get response')
-      }
-
-      const reader = response.body?.getReader()
-      if (!reader) throw new Error('No reader available')
-
-      let assistantMessage = ''
-      const assistantMessageId = (Date.now() + 1).toString()
-
-      // Add initial assistant message
-      const initialAssistantMessage: Message = {
-        id: assistantMessageId,
-        content: '',
-        role: 'assistant',
-        timestamp: new Date()
-      }
-      setMessages(prev => [...prev, initialAssistantMessage])
-
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-
-        const chunk = new TextDecoder().decode(value)
-        assistantMessage += chunk
-
-        // Update the assistant message
-        setMessages(prev => 
-          prev.map(msg => 
-            msg.id === assistantMessageId 
-              ? { ...msg, content: assistantMessage }
-              : msg
-          )
-        )
-      }
-    } catch (error) {
-      console.error('Error:', error)
-      const errorMessage: Message = {
-        id: Date.now().toString(),
-        content: 'Sorry, there was an error processing your request. Please check your API key and try again.',
-        role: 'assistant',
-        timestamp: new Date()
-      }
-      setMessages(prev => [...prev, errorMessage])
+      const res = await fetch('/api/upload_pdf', { method: 'POST', body: formData })
+      if (!res.ok) throw new Error(await res.text())
+      const data = await res.json()
+      setSessionId(data.session_id)
+    } catch (err: any) {
+      setUploadError('Upload failed: ' + (err?.message || 'Unknown error'))
     } finally {
-      setIsLoading(false)
+      setPdfUploading(false)
     }
   }
 
-  const clearChat = () => {
-    setMessages([])
+  // Handle chat
+  const handleAsk = async () => {
+    if (!sessionId || !question || !apiKey) return
+    setAnswer(null)
+    setChatError(null)
+    try {
+      const res = await fetch('/api/chat_pdf', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ session_id: sessionId, user_message: question, api_key: apiKey }),
+      })
+      if (!res.ok) throw new Error(await res.text())
+      const data = await res.json()
+      setAnswer(data.answer)
+    } catch (err: any) {
+      setChatError('Chat failed: ' + (err?.message || 'Unknown error'))
+    }
   }
 
   return (
-    <div className="min-h-screen flex flex-col">
-      {/* Header */}
-      <header className="bg-white shadow-sm border-b border-gray-200">
-        <div className="max-w-6xl mx-auto px-4 py-4 flex items-center justify-between">
-          <div className="flex items-center space-x-3">
-            <div className="w-10 h-10 bg-gradient-to-r from-blue-500 to-purple-600 rounded-lg flex items-center justify-center">
-              <Bot className="w-6 h-6 text-white" />
-            </div>
-            <div>
-              <h1 className="text-xl font-bold text-gray-900">AI Engineer Challenge</h1>
-              <p className="text-sm text-gray-500">Chat with GPT-4.1-mini</p>
-            </div>
-          </div>
-          <div className="flex items-center space-x-2">
-            <button
-              onClick={() => setShowSettings(!showSettings)}
-              className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
-            >
-              <Settings className="w-5 h-5" />
-            </button>
-            <button
-              onClick={clearChat}
-              className="btn-secondary text-sm"
-            >
-              Clear Chat
-            </button>
-          </div>
-        </div>
-      </header>
-
-      {/* Settings Panel */}
-      {showSettings && (
-        <div className="bg-white border-b border-gray-200 p-4 animate-slide-up">
-          <div className="max-w-6xl mx-auto space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                <Key className="w-4 h-4 inline mr-1" />
-                OpenAI API Key
-              </label>
-              <input
-                type="password"
-                value={apiKey}
-                onChange={(e) => setApiKey(e.target.value)}
-                placeholder="sk-..."
-                className="input-field"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                System Message
-              </label>
-              <textarea
-                value={developerMessage}
-                onChange={(e) => setDeveloperMessage(e.target.value)}
-                placeholder="You are a helpful AI assistant."
-                className="input-field h-20 resize-none"
-              />
-            </div>
-          </div>
+    <div style={{ maxWidth: 600, margin: '40px auto', padding: 24, background: '#fff', borderRadius: 8, boxShadow: '0 2px 8px #eee' }}>
+      <h2>PDF RAG Chat Demo</h2>
+      <div style={{ margin: '16px 0' }}>
+        <label>
+          <b>OpenAI API Key:</b>
+          <input
+            type="password"
+            value={apiKey}
+            onChange={e => setApiKey(e.target.value)}
+            style={{ marginLeft: 8, width: 300 }}
+            placeholder="sk-..."
+          />
+        </label>
+      </div>
+      <div style={{ margin: '16px 0' }}>
+        <input type="file" accept="application/pdf" onChange={handlePdfUpload} disabled={pdfUploading || !apiKey} />
+        {pdfUploading && <span style={{ marginLeft: 8 }}>Uploading...</span>}
+        {uploadError && <div style={{ color: 'red' }}>{uploadError}</div>}
+        {sessionId && <div style={{ color: 'green' }}>PDF uploaded! You can now ask questions.</div>}
+      </div>
+      {sessionId && (
+        <div style={{ margin: '16px 0' }}>
+          <input
+            type="text"
+            value={question}
+            onChange={e => setQuestion(e.target.value)}
+            placeholder="Ask a question about your PDF..."
+            style={{ width: 400 }}
+          />
+          <button onClick={handleAsk} style={{ marginLeft: 8 }}>Ask</button>
         </div>
       )}
-
-      {/* Chat Container */}
-      <div className="flex-1 flex flex-col max-w-6xl mx-auto w-full px-4 py-6">
-        <div className="flex-1 overflow-y-auto chat-container mb-6">
-          {messages.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-full text-center text-gray-500">
-              <Bot className="w-16 h-16 mb-4 text-gray-300" />
-              <h3 className="text-lg font-medium mb-2">Welcome to AI Engineer Challenge</h3>
-              <p className="max-w-md">
-                Start a conversation by typing a message below. Make sure to set your OpenAI API key in the settings.
-              </p>
-            </div>
-          ) : (
-            <div className="space-y-4">
-              {messages.map((message) => (
-                <div
-                  key={message.id}
-                  className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
-                >
-                  <div className={`chat-message ${message.role === 'user' ? 'user-message' : 'assistant-message'}`}>
-                    <div className="flex items-start space-x-2">
-                      {message.role === 'assistant' && (
-                        <Bot className="w-5 h-5 text-gray-500 mt-1 flex-shrink-0" />
-                      )}
-                      <div className="flex-1">
-                        <p className="whitespace-pre-wrap">{message.content}</p>
-                        <p className="text-xs opacity-70 mt-2">
-                          {message.timestamp.toLocaleTimeString()}
-                        </p>
-                      </div>
-                      {message.role === 'user' && (
-                        <User className="w-5 h-5 text-white mt-1 flex-shrink-0" />
-                      )}
-                    </div>
-                  </div>
-                </div>
-              ))}
-              {isLoading && (
-                <div className="flex justify-start">
-                  <div className="chat-message assistant-message">
-                    <div className="flex items-center space-x-2">
-                      <Bot className="w-5 h-5 text-gray-500" />
-                      <div className="flex space-x-1">
-                        <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"></div>
-                        <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
-                        <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-          <div ref={messagesEndRef} />
+      {answer && (
+        <div style={{ margin: '16px 0', background: '#f6f8fa', padding: 12, borderRadius: 4 }}>
+          <b>Answer:</b>
+          <div>{answer}</div>
         </div>
-
-        {/* Input Form */}
-        <form onSubmit={handleSubmit} className="flex space-x-4">
-          <div className="flex-1">
-            <input
-              type="text"
-              value={inputMessage}
-              onChange={(e) => setInputMessage(e.target.value)}
-              placeholder="Type your message..."
-              disabled={isLoading || !apiKey.trim()}
-              className="input-field"
-            />
-          </div>
-          <button
-            type="submit"
-            disabled={isLoading || !inputMessage.trim() || !apiKey.trim()}
-            className="btn-primary flex items-center space-x-2"
-          >
-            <Send className="w-4 h-4" />
-            <span>Send</span>
-          </button>
-        </form>
-
-        {!apiKey.trim() && (
-          <p className="text-sm text-red-500 mt-2 text-center">
-            Please set your OpenAI API key in the settings to start chatting.
-          </p>
-        )}
-      </div>
+      )}
+      {chatError && <div style={{ color: 'red' }}>{chatError}</div>}
     </div>
   )
 } 
