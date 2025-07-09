@@ -7,6 +7,8 @@ interface Message {
   content: string
 }
 
+type Mode = 'explaining' | 'quiz'
+
 export default function Home() {
   const [apiKey, setApiKey] = useState('')
   const [sessionId, setSessionId] = useState<string | null>(null)
@@ -16,6 +18,13 @@ export default function Home() {
   const [answer, setAnswer] = useState<string | null>(null)
   const [chatError, setChatError] = useState<string | null>(null)
   const [messages, setMessages] = useState<Message[]>([])
+  const [mode, setMode] = useState<Mode>('explaining')
+
+  // System prompts for each mode
+  const systemPrompts: Record<Mode, string> = {
+    explaining: "You are a study assistant. Explain with clarity and thoroughness, as if teaching a student.",
+    quiz: "You are a study assistant. Generate 3 multiple-choice questions (with 4 options each, and mark the correct answer) about the following topic for a student quiz."
+  }
 
   // Handle PDF upload
   const handlePdfUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -52,7 +61,12 @@ export default function Home() {
       const res = await fetch('/api/chat_pdf', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ session_id: sessionId, user_message: question, api_key: apiKey }),
+        body: JSON.stringify({
+          session_id: sessionId,
+          user_message: question,
+          api_key: apiKey,
+          system_prompt: systemPrompts[mode],
+        }),
       })
       if (!res.ok) throw new Error(await res.text())
       const data = await res.json()
@@ -72,7 +86,7 @@ export default function Home() {
 
   return (
     <div style={{ maxWidth: 600, margin: '40px auto', padding: 24, background: '#fff', borderRadius: 8, boxShadow: '0 2px 8px #eee' }}>
-      <h2>PDF RAG Chat Demo</h2>
+      <h2>PDF Study Assistant</h2>
       <div style={{ margin: '16px 0' }}>
         <label>
           <b>OpenAI API Key:</b>
@@ -93,6 +107,39 @@ export default function Home() {
       </div>
       {sessionId && (
         <>
+          <div style={{ margin: '16px 0' }}>
+            <b>Mode:</b>
+            <button
+              style={{
+                marginLeft: 8,
+                background: mode === 'explaining' ? '#3b82f6' : '#eee',
+                color: mode === 'explaining' ? '#fff' : '#222',
+                border: 'none',
+                borderRadius: 4,
+                padding: '6px 12px',
+                cursor: 'pointer',
+                fontWeight: mode === 'explaining' ? 600 : 400,
+              }}
+              onClick={() => setMode('explaining')}
+            >
+              Explaining
+            </button>
+            <button
+              style={{
+                marginLeft: 8,
+                background: mode === 'quiz' ? '#3b82f6' : '#eee',
+                color: mode === 'quiz' ? '#fff' : '#222',
+                border: 'none',
+                borderRadius: 4,
+                padding: '6px 12px',
+                cursor: 'pointer',
+                fontWeight: mode === 'quiz' ? 600 : 400,
+              }}
+              onClick={() => setMode('quiz')}
+            >
+              Quiz
+            </button>
+          </div>
           <div style={{ margin: '16px 0', minHeight: 120, background: '#f6f8fa', padding: 12, borderRadius: 4 }}>
             {messages.length === 0 && <div style={{ color: '#888' }}>No messages yet. Ask a question about your PDF!</div>}
             {messages.map((msg, idx) => (
@@ -117,7 +164,7 @@ export default function Home() {
               type="text"
               value={question}
               onChange={e => setQuestion(e.target.value)}
-              placeholder="Ask a question about your PDF..."
+              placeholder={mode === 'quiz' ? 'Enter a topic for quiz questions...' : 'Ask a question about your PDF...'}
               style={{ width: 400 }}
               onKeyDown={e => { if (e.key === 'Enter') handleAsk() }}
             />

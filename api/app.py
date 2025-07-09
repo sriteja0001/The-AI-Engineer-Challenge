@@ -42,6 +42,7 @@ class PDFChatRequest(BaseModel):
     user_message: str
     api_key: str
     model: Optional[str] = "gpt-4.1-mini"
+    system_prompt: Optional[str] = None
 
 # Define the main chat endpoint that handles POST requests
 @app.post("/api/chat")
@@ -103,7 +104,10 @@ async def chat_pdf(request: PDFChatRequest):
         raise HTTPException(status_code=404, detail="Session not found")
     relevant_chunks = vector_db.search_by_text(request.user_message, k=4, return_as_text=True)
     context = "\n".join(relevant_chunks)
-    prompt = f"You are a helpful assistant. Use the following context from a PDF to answer the user's question.\n\nContext:\n{context}\n\nQuestion: {request.user_message}\nAnswer:"
+    if request.system_prompt:
+        prompt = f"{request.system_prompt}\n\nContext:\n{context}\n\nQuestion: {request.user_message}\nAnswer:"
+    else:
+        prompt = f"You are a helpful assistant. Use the following context from a PDF to answer the user's question.\n\nContext:\n{context}\n\nQuestion: {request.user_message}\nAnswer:"
     client = OpenAI(api_key=request.api_key)
     response = client.chat.completions.create(
         model=request.model,
